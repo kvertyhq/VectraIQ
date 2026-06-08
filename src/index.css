@@ -98,18 +98,21 @@ body {
 .mac-viewer {
   flex: 1;
   background-color: var(--mac-bg);
-  overflow-y: auto;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  padding: 24px;
 }
 
 /* PDF Page Wrapper */
 .pdf-page {
+  width: fit-content;
+  min-height: 842px;
+  background: white;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   margin-bottom: 20px;
-  background: white;
+  overflow: hidden;
 }
 
 /* Custom Search Input */
@@ -156,4 +159,10 @@ body {
 
 .search-result-item:hover {
   background-color: rgba(0,0,0,0.05);
+}
+.zoom-label {
+  min-width: 42px;
+  font-size: 12px;
+  color: var(--mac-text);
+  text-align: center;
 }

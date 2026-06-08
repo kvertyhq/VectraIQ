@@ -32,9 +32,13 @@ function chunkSentencesWithOverlap(text: string, maxChars: number = 600, overlap
   return Array.from(new Set(chunks));
 }
 
-export async function processPdfForSemanticSearch(pdfUrl: string, onProgress: (msg: string) => void): Promise<ChunkInfo[]> {
+export async function processPdfForSemanticSearch(pdfSource: string | Uint8Array, onProgress: (msg: string) => void): Promise<ChunkInfo[]> {
   onProgress('Loading PDF...');
-  const loadingTask = pdfjs.getDocument(pdfUrl);
+  const loadingTask = pdfjs.getDocument(
+  typeof pdfSource === 'string' 
+    ? pdfSource 
+    : { data: pdfSource }
+);
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
   const chunks: ChunkInfo[] = [];

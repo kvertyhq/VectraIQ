@@ -1,5 +1,16 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import fs from 'node:fs/promises'
 import path from 'node:path'
+
+// Fix: TypeScript ko process.env ke custom fields batao
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      DIST: string
+      VITE_PUBLIC: string
+    }
+  }
+}
 
 // The built directory structure
 //
@@ -22,7 +33,7 @@ function createWindow() {
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
     width: 1000,
     height: 800,
-    titleBarStyle: 'hiddenInset', // Mac specific: hides titlebar but keeps traffic lights
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -32,22 +43,19 @@ function createWindow() {
     },
   })
 
-  // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
   })
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
-    win.webContents.openDevTools()
+    // win.webContents.openDevTools()
   } else {
-    // win.loadFile('dist/index.html')
     win.loadFile(path.join(process.env.DIST, 'index.html'))
-    win.webContents.openDevTools()
+    // win.webContents.openDevTools()
   }
 }
 
-// Handle file open dialog
 ipcMain.handle('dialog:openFile', async () => {
   if (!win) return null
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -57,13 +65,15 @@ ipcMain.handle('dialog:openFile', async () => {
   if (canceled) {
     return null
   } else {
-    return filePaths[0]
+    const filePath = filePaths[0]
+    const data = await fs.readFile(filePath)
+    return {
+      filePath,
+      data,
+    }
   }
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
@@ -72,8 +82,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
   }
@@ -81,7 +89,7 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin') {
-    app.dock.setIcon(path.join(process.env.VITE_PUBLIC, 'icon.png'))
+    app.dock?.setIcon(path.join(process.env.VITE_PUBLIC, 'icon.png'))
   }
   createWindow()
 })

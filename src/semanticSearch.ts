@@ -1,75 +1,95 @@
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
-// Tell transformers to use the browser cache
+// @ts-ignore
 env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-// Optimize WASM threads for Apple Silicon
-if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
-  // @ts-ignore
-  env.backends.onnx.wasm.numThreads = Math.max(1, navigator.hardwareConcurrency - 1);
-}
-
+// @ts-ignore
+env.useBrowserCache = false;
+// @ts-ignore
+env.backends.onnx.wasm.numThreads = 1;
 let extractor: any = null;
 
 export async function initModel(onProgress?: (progress: any) => void) {
-  if (!extractor) {
+  if (extractor) return extractor;
+
+  try {
+    extractor = await pipeline(
+      'feature-extraction',
+      'Xenova/all-MiniLM-L6-v2',
+      { progress_callback: onProgress, device: 'webgpu', dtype: 'fp32' } as any
+    );
+    console.log('Model loaded on WebGPU.');
+  } catch (e) {
+    console.warn('WebGPU unavailable, falling back to CPU WASM.');
     try {
-      // Attempt to load with WebGPU hardware acceleration
-      extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        progress_callback: onProgress,
-        // @ts-ignore - WebGPU device option might not exist in older TS typings
-        device: 'webgpu',
-        dtype: 'fp32'
-      });
-      console.log("Transformers.js initialized with WebGPU.");
-    } catch (e) {
-      console.warn('WebGPU not supported or failed, falling back to CPU (WASM).', e);
-      extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        progress_callback: onProgress
-      });
+      extractor = await pipeline(
+        'feature-extraction',
+        'Xenova/all-MiniLM-L6-v2',
+        { progress_callback: onProgress, dtype: 'fp32' } as any
+      );
+      console.log('Model loaded on CPU WASM.');
+    } catch (fallbackErr) {
+      extractor = null;
+      console.error('Model load completely failed:', fallbackErr);
+      throw new Error('Could not load embedding model. Please restart the app.');
     }
   }
+
   return extractor;
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
   if (!extractor) await initModel();
   const output = await extractor(text, { pooling: 'mean', normalize: true });
-  return Array.from(output.data);
+  return Array.from(output.data as Float32Array);
 }
 
 export async function getEmbeddingBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   if (!extractor) await initModel();
-  
-  // Transformers.js natively supports batching when passed an array of strings
+
   const output = await extractor(texts, { pooling: 'mean', normalize: true });
-  
+
   const batchSize = texts.length;
-  const embeddingSize = output.dims[1];
+  const totalElements = (output.data as Float32Array).length;
+  const embeddingSize = output.dims?.[1] ?? Math.floor(totalElements / batchSize);
+
+  if (embeddingSize <= 0 || embeddingSize * batchSize !== totalElements) {
+    console.error('Embedding shape mismatch:', { batchSize, totalElements, embeddingSize });
+    throw new Error('Embedding batch shape invalid.');
+  }
+
   const embeddings: number[][] = [];
-  const data = output.data;
-  
+  const data = output.data as Float32Array;
+
   for (let i = 0; i < batchSize; i++) {
     const start = i * embeddingSize;
     const end = start + embeddingSize;
     embeddings.push(Array.from(data.subarray(start, end)));
   }
-  
+
   return embeddings;
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    console.warn('cosineSimilarity: vector length mismatch', a.length, b.length);
+    return 0;
+  }
+
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
+
   for (let i = 0; i < a.length; i++) {
     dotProduct += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denom === 0) return 0;
+
+  return dotProduct / denom;
 }
 
 export interface ChunkInfo {
@@ -78,22 +98,33 @@ export interface ChunkInfo {
   embedding: number[];
 }
 
-// Global cache for the current document
-export let documentChunks: ChunkInfo[] = [];
+let _documentChunks: ChunkInfo[] = [];
 
 export function setDocumentChunks(chunks: ChunkInfo[]) {
-  documentChunks = chunks;
+  _documentChunks = chunks;
+}
+
+export function getDocumentChunks(): ChunkInfo[] {
+  return _documentChunks;
+}
+
+export function clearDocumentChunks() {
+  _documentChunks = [];
 }
 
 export async function searchDocument(query: string, topK: number = 5): Promise<ChunkInfo[]> {
-  if (documentChunks.length === 0) return [];
+  console.log('_documentChunks length:', _documentChunks.length)
+  if (_documentChunks.length === 0) return [];
+
   const queryEmbedding = await getEmbedding(query);
-  
-  const scoredChunks = documentChunks.map(chunk => ({
+  console.log('Query embedding length:', queryEmbedding.length)
+
+  const scoredChunks = _documentChunks.map((chunk) => ({
     ...chunk,
-    score: cosineSimilarity(queryEmbedding, chunk.embedding)
+    score: cosineSimilarity(queryEmbedding, chunk.embedding),
   }));
-  
+
   scoredChunks.sort((a, b) => b.score - a.score);
+  console.log('Top result score:', scoredChunks[0]?.score)
   return scoredChunks.slice(0, topK);
 }
