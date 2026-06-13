@@ -1,8 +1,10 @@
 {
-  "name": "pdf-viewer",
+  "name": "vectraiq",
   "private": true,
   "version": "2026.0.0",
   "main": "dist-electron/main.js",
+  "description": "AI-powered semantic search for PDF documents",
+  "author": "Kverty",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -41,8 +43,9 @@
     "vite-plugin-electron-renderer": "^0.14.7"
   },
   "build": {
-    "appId": "com.pdfreader.app",
-    "productName": "PDF Viewer",
+    "appId": "com.kverty.vectraiq",
+    "productName": "VectraIQ",
+    "copyright": "Copyright © 2026 Kverty",
     "directories": {
       "buildResources": "public",
       "output": "dist-app"
@@ -66,12 +69,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PDF Viewer"
+      "shortcutName": "VectraIQ"
     },
     "mac": {
       "target": ["dmg", "zip"],
       "category": "public.app-category.productivity",
-      "icon": "public/electron-vite.svg"
+      "icon": "public/icon.png"
     },
     "dmg": {
       "contents": [
